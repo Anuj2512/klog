@@ -76,7 +76,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	stdLog "log"
 	"math"
 	"os"
@@ -393,7 +392,7 @@ func (t *traceLocation) Set(value string) error {
 type flushSyncWriter interface {
 	Flush() error
 	Sync() error
-	io.Writer
+	Writer
 }
 
 // init sets up the defaults and runs flushDaemon.
@@ -719,9 +718,13 @@ func (l *loggingT) printWithFileLine(s severity, file string, line int, alsoToSt
 	l.output(s, buf, file, line, alsoToStderr)
 }
 
+type Writer interface {
+	Write(msg []byte, enabled bool, logLevel int, logType string) (n int, err error)
+}
+
 // redirectBuffer is used to set an alternate destination for the logs
 type redirectBuffer struct {
-	w io.Writer
+	w Writer
 }
 
 func (rb *redirectBuffer) Sync() error {
@@ -732,12 +735,12 @@ func (rb *redirectBuffer) Flush() error {
 	return nil
 }
 
-func (rb *redirectBuffer) Write(bytes []byte) (n int, err error) {
-	return rb.w.Write(bytes)
+func (rb *redirectBuffer) Write(msg []byte, enabled bool, logLevel int, logType string) (n int, err error) {
+	return rb.w.Write(msg, enabled, logLevel, logType)
 }
 
 // SetOutput sets the output destination for all severities
-func SetOutput(w io.Writer) {
+func SetOutput(w Writer) {
 	logging.mu.Lock()
 	defer logging.mu.Unlock()
 	for s := fatalLog; s >= infoLog; s-- {
@@ -749,7 +752,7 @@ func SetOutput(w io.Writer) {
 }
 
 // SetOutputBySeverity sets the output destination for specific severity
-func SetOutputBySeverity(name string, w io.Writer) {
+func SetOutputBySeverity(name string, w Writer) {
 	logging.mu.Lock()
 	defer logging.mu.Unlock()
 	sev, ok := severityByName(name)
@@ -764,79 +767,18 @@ func SetOutputBySeverity(name string, w io.Writer) {
 
 // output writes the data to the log files and releases the buffer.
 func (l *loggingT) output(s severity, buf *buffer, file string, line int, alsoToStderr bool) {
+
 	l.mu.Lock()
+
 	if l.traceLocation.isSet() {
 		if l.traceLocation.match(file, line) {
 			buf.Write(stacks(false))
 		}
 	}
+
 	data := buf.Bytes()
-	if l.toStderr {
-		os.Stderr.Write(data)
-	} else {
-		if alsoToStderr || l.alsoToStderr || s >= l.stderrThreshold.get() {
-			os.Stderr.Write(data)
-		}
+	l.file[infoLog].Write(data, true, int(l.verbosity.get()), severityName[s])
 
-		if logging.logFile != "" {
-			// Since we are using a single log file, all of the items in l.file array
-			// will point to the same file, so just use one of them to write data.
-			if l.file[infoLog] == nil {
-				if err := l.createFiles(infoLog); err != nil {
-					os.Stderr.Write(data) // Make sure the message appears somewhere.
-					l.exit(err)
-				}
-			}
-			l.file[infoLog].Write(data)
-		} else {
-			if l.file[s] == nil {
-				if err := l.createFiles(s); err != nil {
-					os.Stderr.Write(data) // Make sure the message appears somewhere.
-					l.exit(err)
-				}
-			}
-
-			switch s {
-			case fatalLog:
-				l.file[fatalLog].Write(data)
-				fallthrough
-			case errorLog:
-				l.file[errorLog].Write(data)
-				fallthrough
-			case warningLog:
-				l.file[warningLog].Write(data)
-				fallthrough
-			case infoLog:
-				l.file[infoLog].Write(data)
-			}
-		}
-	}
-	if s == fatalLog {
-		// If we got here via Exit rather than Fatal, print no stacks.
-		if atomic.LoadUint32(&fatalNoStacks) > 0 {
-			l.mu.Unlock()
-			timeoutFlush(10 * time.Second)
-			os.Exit(1)
-		}
-		// Dump all goroutine stacks before exiting.
-		// First, make sure we see the trace for the current goroutine on standard error.
-		// If -logtostderr has been specified, the loop below will do that anyway
-		// as the first stack in the full dump.
-		if !l.toStderr {
-			os.Stderr.Write(stacks(false))
-		}
-		// Write the stack trace for all goroutines to the files.
-		trace := stacks(true)
-		logExitFunc = func(error) {} // If we get a write error, we'll still exit below.
-		for log := fatalLog; log >= infoLog; log-- {
-			if f := l.file[log]; f != nil { // Can be nil if -logtostderr is set.
-				f.Write(trace)
-			}
-		}
-		l.mu.Unlock()
-		timeoutFlush(10 * time.Second)
-		os.Exit(255) // C++ uses -1, which is silly because it's anded with 255 anyway.
-	}
 	l.putBuffer(buf)
 	l.mu.Unlock()
 	if stats := severityStats[s]; stats != nil {
@@ -983,26 +925,6 @@ func (sb *syncBuffer) rotateFile(now time.Time, startup bool) error {
 // on disk I/O. The flushDaemon will block instead.
 const bufferSize = 256 * 1024
 
-// createFiles creates all the log files for severity from sev down to infoLog.
-// l.mu is held.
-func (l *loggingT) createFiles(sev severity) error {
-	now := time.Now()
-	// Files are created in decreasing severity order, so as soon as we find one
-	// has already been created, we can stop.
-	for s := sev; s >= infoLog && l.file[s] == nil; s-- {
-		sb := &syncBuffer{
-			logger:   l,
-			sev:      s,
-			maxbytes: CalculateMaxSize(),
-		}
-		if err := sb.rotateFile(now, true); err != nil {
-			return err
-		}
-		l.file[s] = sb
-	}
-	return nil
-}
-
 const flushInterval = 5 * time.Second
 
 // flushDaemon periodically flushes the log file buffers.
@@ -1109,6 +1031,8 @@ func (l *loggingT) setV(pc uintptr) Level {
 // Verbose is a boolean type that implements Infof (like Printf) etc.
 // See the documentation of V for more information.
 type Verbose bool
+
+// type Verbose func() bool
 
 // V reports whether verbosity at the call site is at least the requested level.
 // The returned value is a boolean of type Verbose, which implements Info, Infoln
