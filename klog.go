@@ -1032,7 +1032,7 @@ func (l *loggingT) setV(pc uintptr) Level {
 // See the documentation of V for more information.
 type Verbose bool
 
-// type Verbose func() bool
+var verboseInfo = make(map[*Verbose]Level)
 
 // V reports whether verbosity at the call site is at least the requested level.
 // The returned value is a boolean of type Verbose, which implements Info, Infoln
@@ -1052,9 +1052,13 @@ func V(level Level) Verbose {
 	// This function tries hard to be cheap unless there's work to do.
 	// The fast path is two atomic loads and compares.
 
+	vt := Verbose(true)
+	vf := Verbose(false)
+
 	// Here is a cheap but safe test to see if V logging is enabled globally.
 	if logging.verbosity.get() >= level {
-		return Verbose(true)
+		verboseInfo[&vt] = level
+		return vt
 	}
 
 	// It's off globally but it vmodule may still be set.
@@ -1066,20 +1070,27 @@ func V(level Level) Verbose {
 		logging.mu.Lock()
 		defer logging.mu.Unlock()
 		if runtime.Callers(2, logging.pcs[:]) == 0 {
-			return Verbose(false)
+			verboseInfo[&vf] = level
+			return vf
 		}
 		v, ok := logging.vmap[logging.pcs[0]]
 		if !ok {
 			v = logging.setV(logging.pcs[0])
 		}
-		return Verbose(v >= level)
+
+		vu := Verbose(v >= level)
+		verboseInfo[&vu] = level
+		return vu
+
 	}
-	return Verbose(false)
+	verboseInfo[&vf] = level
+	return vf
 }
 
 // Info is equivalent to the global Info function, guarded by the value of v.
 // See the documentation of V for usage.
 func (v Verbose) Info(args ...interface{}) {
+	fmt.Println("Verbose:", verboseInfo[&v])
 	if v {
 		logging.print(infoLog, args...)
 	}
@@ -1096,6 +1107,7 @@ func (v Verbose) Infoln(args ...interface{}) {
 // Infof is equivalent to the global Infof function, guarded by the value of v.
 // See the documentation of V for usage.
 func (v Verbose) Infof(format string, args ...interface{}) {
+	fmt.Println("Verbose:", verboseInfo[&v])
 	if v {
 		logging.printf(infoLog, format, args...)
 	}
