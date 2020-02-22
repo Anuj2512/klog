@@ -3,8 +3,8 @@ package main
 import (
 	"flag"
 
+	"github.com/Anuj2512/klog"
 	"github.com/golang/glog"
-	"k8s.io/klog/v2"
 )
 
 func main() {
