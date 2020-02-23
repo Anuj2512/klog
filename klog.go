@@ -788,7 +788,7 @@ func (l *loggingT) output(s severity, log logr.InfoLogger, headerBuf *buffer, ms
 		}
 	}
 
-	headerData := msgBuf.Bytes()
+	headerData := headerBuf.Bytes()
 	msgData := msgBuf.Bytes()
 	l.file.Write(headerData, msgData, logEnabled, int(logLevel), severityName[s])
 
