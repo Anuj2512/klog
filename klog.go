@@ -736,13 +736,13 @@ func (rb *redirectBuffer) Flush() error {
 	return nil
 }
 
-func (rb *redirectBuffer) Write(header []byte, msg []byte, logEnabled bool, logLevel int, logType string) (n int, err error) {
-	return rb.w.Write(header, msg, logEnabled, logLevel, logType)
+func (rb *redirectBuffer) Write(header []byte, msg []byte, logEnabled bool, logVerbosity int32, logType string) (n int, err error) {
+	return rb.w.Write(header, msg, logEnabled, logVerbosity, logType)
 }
 
 // Writer defines methods to write bytes with additional info
 type Writer interface {
-	Write(header []byte, msg []byte, logEnabled bool, logLevel int, logType string) (n int, err error)
+	Write(header []byte, msg []byte, logEnabled bool, logVerbosity int32, logType string) (n int, err error)
 }
 
 // SetLogger will set the backing logr implementation for klog.
@@ -789,7 +789,7 @@ func (l *loggingT) output(s severity, log logr.InfoLogger, headerBuf *buffer, ms
 
 	headerData := headerBuf.Bytes()
 	msgData := msgBuf.Bytes()
-	l.file.Write(headerData, msgData, logEnabled, int(logLevel), severityName[s])
+	l.file.Write(headerData, msgData, logEnabled, int32(logLevel), severityName[s])
 
 	if s == fatalLog {
 		// If we got here via Exit rather than Fatal, print no stacks.
@@ -800,7 +800,7 @@ func (l *loggingT) output(s severity, log logr.InfoLogger, headerBuf *buffer, ms
 		}
 		// Dump all goroutine stacks before exiting.
 		trace := stacks(true)
-		l.file.Write(headerData, trace, logEnabled, int(logLevel), severityName[s])
+		l.file.Write(headerData, trace, logEnabled, int32(logLevel), severityName[s])
 
 		l.mu.Unlock()
 		timeoutFlush(10 * time.Second)
