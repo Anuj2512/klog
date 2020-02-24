@@ -1136,6 +1136,12 @@ func (v Verbose) Infof(format string, args ...interface{}) {
 	logging.printf(infoLog, v.logr, v.logLevel, v.enabled, format, args...)
 }
 
+// InfoDepth acts as Info but uses depth to determine which call frame to log.
+// InfoDepth(0, "msg") is the same as Info("msg").
+func (v Verbose) InfoDepth(depth int, args ...interface{}) {
+	logging.printDepth(infoLog, logging.logr, zeroLogLevel, v.enabled, depth, args...)
+}
+
 // Info logs to the INFO log.
 // Arguments are handled in the manner of fmt.Print; a newline is appended if missing.
 func Info(args ...interface{}) {
