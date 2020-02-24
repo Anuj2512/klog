@@ -408,7 +408,6 @@ func init() {
 	logging.logFile = ""
 	logging.logFileMaxSizeMB = 1800
 	logging.toStderr = true
-	logging.alsoToStderr = false
 	logging.skipHeaders = false
 	logging.addDirHeader = false
 	logging.skipLogHeaders = false
@@ -426,8 +425,6 @@ func InitFlags(flagset *flag.FlagSet) {
 	flagset.Uint64Var(&logging.logFileMaxSizeMB, "log_file_max_size", logging.logFileMaxSizeMB,
 		"Defines the maximum size a log file can grow to. Unit is megabytes. "+
 			"If the value is 0, the maximum file size is unlimited.")
-	flagset.BoolVar(&logging.toStderr, "logtostderr", logging.toStderr, "log to standard error instead of files")
-	flagset.BoolVar(&logging.alsoToStderr, "alsologtostderr", logging.alsoToStderr, "log to standard error as well as files")
 	flagset.Var(&logging.verbosity, "v", "number for the log level verbosity")
 	flagset.BoolVar(&logging.addDirHeader, "add_dir_header", logging.addDirHeader, "If true, adds the file directory to the header")
 	flagset.BoolVar(&logging.skipHeaders, "skip_headers", logging.skipHeaders, "If true, avoid header prefixes in the log messages")
@@ -447,8 +444,7 @@ type loggingT struct {
 	// Boolean flags. Not handled atomically because the flag.Value interface
 	// does not let us avoid the =true, and that shorthand is necessary for
 	// compatibility. TODO: does this matter enough to fix? Seems unlikely.
-	toStderr     bool // The -logtostderr flag.
-	alsoToStderr bool // The -alsologtostderr flag.
+	toStderr bool // The -logtostderr flag.
 
 	// Level flag. Handled atomically.
 	stderrThreshold severity // The -stderrthreshold flag.
@@ -716,10 +712,8 @@ func (l *loggingT) printf(s severity, logr logr.InfoLogger, logLevel Level, logE
 	l.output(s, logr, headerBuf, msgBuf, file, line, logLevel, logEnabled)
 }
 
-// printWithFileLine behaves like print but uses the provided file and line number.  If
-// alsoLogToStderr is true, the log message always appears on standard error; it
-// will also appear in the log file unless --logtostderr is set.
-func (l *loggingT) printWithFileLine(s severity, logr logr.InfoLogger, logLevel Level, logEnabled bool, file string, line int, alsoToStderr bool, args ...interface{}) {
+// printWithFileLine behaves like print but uses the provided file and line number.
+func (l *loggingT) printWithFileLine(s severity, logr logr.InfoLogger, logLevel Level, logEnabled bool, file string, line int, args ...interface{}) {
 	headerBuf := l.formatHeader(s, file, line)
 	msgBuf := l.getBuffer()
 	fmt.Fprint(msgBuf, args...)
@@ -772,6 +766,11 @@ func SetOutput(w Writer) {
 		w: w,
 	}
 	logging.file = rb
+}
+
+// GetVerbosity returns currently set verbosity level
+func GetVerbosity() Level {
+	return logging.verbosity.get()
 }
 
 // output writes the data to the log files and releases the buffer.
@@ -1024,9 +1023,7 @@ func (lb logBridge) Write(b []byte) (n int, err error) {
 			line = 1
 		}
 	}
-	// printWithFileLine with alsoToStderr=true, so standard log messages
-	// always appear on standard error.
-	logging.printWithFileLine(severity(lb), logging.logr, defaultLogLevel, true, file, line, true, text)
+	logging.printWithFileLine(severity(lb), logging.logr, defaultLogLevel, true, file, line, text)
 	return len(b), nil
 }
 
