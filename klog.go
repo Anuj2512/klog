@@ -403,7 +403,7 @@ type flushSyncWriter interface {
 // init sets up the defaults and runs flushDaemon.
 func init() {
 	logging.stderrThreshold = errorLog // Default stderrThreshold is ERROR.
-	logging.setVState(0, nil, false)
+	logging.setVState(3, nil, false)
 	logging.logDir = ""
 	logging.logFile = ""
 	logging.logFileMaxSizeMB = 1800
@@ -426,6 +426,7 @@ func InitFlags(flagset *flag.FlagSet) {
 		"Defines the maximum size a log file can grow to. Unit is megabytes. "+
 			"If the value is 0, the maximum file size is unlimited.")
 	flagset.Var(&logging.verbosity, "v", "number for the log level verbosity")
+
 	flagset.BoolVar(&logging.addDirHeader, "add_dir_header", logging.addDirHeader, "If true, adds the file directory to the header")
 	flagset.BoolVar(&logging.skipHeaders, "skip_headers", logging.skipHeaders, "If true, avoid header prefixes in the log messages")
 	flagset.BoolVar(&logging.skipLogHeaders, "skip_log_headers", logging.skipLogHeaders, "If true, avoid headers when opening log files")
